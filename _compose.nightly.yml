@@ -191,8 +191,11 @@ services:
      - openitcockpit.env
     networks:
       - oitc-backend
+    #ports:
+    #   - "8091:8091"   # WebSocket Event Stream
+    #   - "8092:8092"   # External Command API
+    #   - "9105:9105"   # Prometheus Metrics Exporter
     depends_on:
-      - redis
       - mysql
       - gearmand
     deploy:
