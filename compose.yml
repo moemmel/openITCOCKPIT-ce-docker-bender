@@ -1,9 +1,33 @@
+---
+# openITCOCKPIT CE - angepasst für Dockhand + Traefik
+# Basis: https://github.com/openITCOCKPIT/openITCOCKPIT-ce-docker (compose.yml)
+#
+# Änderungen gegenüber Upstream:
+#   1. Keine Host-Ports mehr (Zugriff nur über Traefik). Die Upstream-Datei veröffentlicht
+#      z.B. "3306" und "6379" ohne Host-Port -> Docker belegt zufällige Host-Ports.
+#      Hier: "expose" statt "ports" (nur im Backend-Netz erreichbar).
+#   2. Alle 19 Named Volumes -> Bind-Mounts unter /opt/docker/itcockpit/<name>
+#   3. Traefik-Labels + externes Netz traefik_proxy für den Service "openitcockpit"
+#   4. Geheimnisse kommen als Variablen aus Dockhand (${...}), nicht aus Git
+#   5. Postfix-Werte des Upstream-Betreibers entfernt
+#
+# Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
+#   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN
+#   (OITC_DOMAIN = Hostname der Instanz, z.B. monitoring.example.org)
+# Optional: SMTP_RELAYHOST
+# Hinweis: In Passwörtern kein "$" verwenden (Compose würde es als Variable lesen).
+
+x-oitc-db-secrets: &oitc-db-secrets
+  MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD setzen}"
+  MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
+
 services:
+
   gearmand:
     image: openitcockpit/gearmand:latest
-    ports:
-      - "4730"       # Gearman-Job-Server
-    ulimits:         # See: https://statusengine.org/tutorials/gearman-to-many-files/
+    expose:
+      - "4730" # Gearman-Job-Server
+    ulimits: # See: https://statusengine.org/tutorials/gearman-to-many-files/
       nofile:
         soft: 65536
         hard: 65536
@@ -15,8 +39,8 @@ services:
 
   redis:
     image: redis:latest
-    ports:
-      - "6379"       # Redis-Server
+    expose:
+      - "6379" # Redis-Server
     networks:
       - oitc-backend
     deploy:
@@ -24,11 +48,13 @@ services:
         condition: on-failure
 
   mysql:
-    image: mysql:lts
+    image: mysql:latest
     env_file:
-     - openitcockpit.env
-    ports:
-      - "3306"       # MySQL Default Ports
+      - openitcockpit.env
+    environment:
+      <<: *oitc-db-secrets
+    expose:
+      - "3306" # MySQL Default Ports
     ulimits:
       nofile:
         soft: 65536
@@ -36,7 +62,7 @@ services:
     networks:
       - oitc-backend
     volumes:
-      - mysql-data:/var/lib/mysql
+      - /opt/docker/itcockpit/mysql-data:/var/lib/mysql
     command: mysqld --sql_mode="" --innodb-buffer-pool-size=256M --innodb-flush-log-at-trx-commit=2 --innodb-file-per-table=1 --innodb-flush-method=O_DIRECT --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci --skip-log-bin
     deploy:
       restart_policy:
@@ -45,9 +71,9 @@ services:
   victoria-metrics:
     image: openitcockpit/victoria-metrics:latest
     env_file:
-     - openitcockpit.env
-    ports:
-      - "8428"       # victoria-metrics
+      - openitcockpit.env
+    expose:
+      - "8428" # victoria-metrics
     networks:
       - oitc-backend
     deploy:
@@ -58,9 +84,9 @@ services:
     image: openitcockpit/carbon-c-relay:latest
     # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
     env_file:
-     - openitcockpit.env
-    ports:
-      - "2003"       # local graphite plaintext port
+      - openitcockpit.env
+    expose:
+      - "2003" # local graphite plaintext port
     networks:
       - oitc-backend
     deploy:
@@ -72,12 +98,12 @@ services:
   carbon-cache1:
     image: openitcockpit/carbon-cache:latest
     env_file:
-     - openitcockpit.env
+      - openitcockpit.env
     environment:
       - CC_INSTANCE=1 # Make sure to adjust this
     hostname: carbon-cache1
     volumes:
-      - graphite-data:/var/lib/graphite/whisper
+      - /opt/docker/itcockpit/graphite-data:/var/lib/graphite/whisper
     networks:
       - oitc-backend
     ulimits:
@@ -90,12 +116,12 @@ services:
   carbon-cache2:
     image: openitcockpit/carbon-cache:latest
     env_file:
-     - openitcockpit.env
+      - openitcockpit.env
     environment:
       - CC_INSTANCE=2 # Make sure to adjust this
     hostname: carbon-cache2
     volumes:
-      - graphite-data:/var/lib/graphite/whisper
+      - /opt/docker/itcockpit/graphite-data:/var/lib/graphite/whisper
     networks:
       - oitc-backend
     ulimits:
@@ -105,10 +131,10 @@ services:
 
   graphite-web:
     image: openitcockpit/graphite-web:latest
-    ports:
-      - "8080"       # Graphite Web
+    expose:
+      - "8080" # Graphite Web
     volumes:
-      - graphite-data:/var/lib/graphite/whisper
+      - /opt/docker/itcockpit/graphite-data:/var/lib/graphite/whisper
     networks:
       - oitc-backend
     deploy:
@@ -118,15 +144,15 @@ services:
   grafana:
     image: openitcockpit/grafana:latest
     env_file:
-     - openitcockpit.env
-    ports:
-      - "3033"       # Grafana
+      - openitcockpit.env
+    expose:
+      - "3033" # Grafana
     networks:
       oitc-backend:
         aliases:
           - "grafana.docker"
     volumes:
-      - grafana-data:/var/lib/grafana
+      - /opt/docker/itcockpit/grafana-data:/var/lib/grafana
     deploy:
       restart_policy:
         condition: on-failure
@@ -135,18 +161,18 @@ services:
     image: openitcockpit/naemon:latest
     init: true
     env_file:
-     - openitcockpit.env
-    ports:
-      - "9001"       # Supervisor
-      - "9099"       # Binaryd
+      - openitcockpit.env
+    expose:
+      - "9001" # Supervisor
+      - "9099" # Binaryd
     networks:
       - oitc-backend
     depends_on:
       - gearmand
     volumes:
-      - naemon-var:/opt/openitc/nagios/var
-      - naemon-var-local:/opt/openitc/nagios/var_local  # Stuff like logfiles etc we do not care about this
-      - naemon-config:/opt/openitc/nagios/etc/config:ro
+      - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
+      - /opt/docker/itcockpit/naemon-var-local:/opt/openitc/nagios/var_local # Stuff like logfiles etc we do not care about this
+      - /opt/docker/itcockpit/naemon-config:/opt/openitc/nagios/etc/config:ro
     deploy:
       restart_policy:
         condition: on-failure
@@ -155,20 +181,21 @@ services:
     image: openitcockpit/mod_gearman_worker:latest
     init: true
     env_file:
-     - openitcockpit.env
+      - openitcockpit.env
     environment:
-      - IS_WORKHORSE_CONTAINER=1                      # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
+      <<: *oitc-db-secrets
+      IS_WORKHORSE_CONTAINER: "1" # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
     volumes:
-      - naemon-var:/opt/openitc/nagios/var
-      - oitc-agent-cert:/opt/openitc/agent:ro         # TLS certificats of the openITCOCKPIT Monitoring Agent
-      - oitc-agent-etc:/opt/openitc/receiver/etc:ro   # Configfile of the openITCOCKPIT Agent
-      - oitc-frontend-src:/opt/openitc/frontend:ro    # Shared source code of openITCOCKPIT so that this container can execute EVC plugin and default notification scripts
+      - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
+      - /opt/docker/itcockpit/oitc-agent-cert:/opt/openitc/agent:ro # TLS certificats of the openITCOCKPIT Monitoring Agent
+      - /opt/docker/itcockpit/oitc-agent-etc:/opt/openitc/receiver/etc:ro # Configfile of the openITCOCKPIT Agent
+      - /opt/docker/itcockpit/oitc-frontend-src:/opt/openitc/frontend:ro # Shared source code of openITCOCKPIT so that this container can execute EVC plugin and default notification scripts
     networks:
       - oitc-backend
     depends_on:
       - gearmand
     deploy:
-      replicas: 1   # Increase this number if you need more mod_gearman worker containers
+      replicas: 1 # Increase this number if you need more mod_gearman worker containers
       restart_policy:
         condition: on-failure
 
@@ -176,14 +203,13 @@ services:
     image: openitcockpit/statusengine-worker:latest
     init: true
     env_file:
-     - openitcockpit.env
+      - openitcockpit.env
+    environment:
+      <<: *oitc-db-secrets
     networks:
       - oitc-backend
-    #ports:
-    #   - "8091:8091"   # WebSocket Event Stream
-    #   - "8092:8092"   # External Command API
-    #   - "9105:9105"   # Prometheus Metrics Exporter
     depends_on:
+      - redis
       - mysql
       - gearmand
     deploy:
@@ -191,31 +217,49 @@ services:
         condition: on-failure
 
   openitcockpit:
-    image: openitcockpit/openitcockpit-ce:latest                             # Community Edition of openITCOCKPIT
+    image: openitcockpit/openitcockpit-ce:latest # Community Edition of openITCOCKPIT
     init: true
     env_file:
-     - openitcockpit.env
-    ports:
-      - "80:80"       # HTTP
-      - "443:443"     # HTTPS
+      - openitcockpit.env
+    environment:
+      <<: *oitc-db-secrets
+      OITC_ADMIN_EMAIL: "${OITC_ADMIN_EMAIL:?OITC_ADMIN_EMAIL setzen}"
+      OITC_ADMIN_PASSWORD: "${OITC_ADMIN_PASSWORD:?OITC_ADMIN_PASSWORD setzen}"
+    # Keine Host-Ports (80/443): Traefik übernimmt. Das Backend spricht intern HTTPS (selbstsigniert).
+    expose:
+      - "80"
+      - "443"
     networks:
       - oitc-backend
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik_proxy"
+      - "traefik.http.routers.itcockpit.rule=Host(`${OITC_DOMAIN:?OITC_DOMAIN setzen}`)"
+      - "traefik.http.routers.itcockpit.entrypoints=websecure"
+      - "traefik.http.routers.itcockpit.tls=true"
+      - "traefik.http.routers.itcockpit.tls.certresolver=myresolver"
+      - "traefik.http.services.itcockpit.loadbalancer.server.port=443"
+      - "traefik.http.services.itcockpit.loadbalancer.server.scheme=https"
+      # Selbstsigniertes Backend-Zertifikat: benötigt einen serversTransport in der
+      # Traefik-Dateikonfiguration (siehe Anleitung). Ohne diese Definition die Zeile entfernen/auskommentieren.
+      - "traefik.http.services.itcockpit.loadbalancer.serversTransport=insecure-transport@file"
     volumes:
-      - naemon-config:/opt/openitc/nagios/etc/config                          # Configuration files related to Naemon
-      - naemon-var:/opt/openitc/nagios/var                                    # The status.dat is required for the recurring downtimes cronjob
-      - oitc-frontend-src:/opt/openitc/src_sharing/frontend                   # Frontend of openITCOCKPIT to be shared with mod_gearman container so that the container can execute the EVC plugin
-      - oitc-webroot:/opt/openitc/frontend/webroot                            # Webroot of openITCOCKPIT to keep images and share files with puppeteer
-      - oitc-maps:/opt/openitc/frontend/plugins/MapModule/webroot/img         # Images of the MapModule
-      - oitc-agent-cert:/opt/openitc/agent                                    # TLS certificats of the openITCOCKPIT Monitoring Agent
-      - oitc-agent-etc:/opt/openitc/receiver/etc                              # Configuration for the openITCOCKPIT Monitoring Agent Check Reciver
-      - oitc-var:/opt/openitc/var                                             # A safe harbor to store .lock files
-      - oitc-backups:/opt/openitc/nagios/backup                               # Automaticaly generated MySQL dumps
-      #- oitc-import:/opt/openitc/frontend/plugins/ImportModule/webroot/files  # Uplaoded files of the ImportModule
-      - oitc-styles:/opt/openitc/frontend/plugins/DesignModule/webroot/css    # Custom styles of the DesignModule
-      - checkmk-agents:/opt/openitc/check_mk/agents:ro
-      - checkmk-etc:/opt/openitc/check_mk/etc/check_mk
-      - checkmk-var:/opt/openitc/check_mk/var/check_mk
-      - prometheus-config:/opt/openitc/prometheus                             # Configuration files related to Prometheus
+      - /opt/docker/itcockpit/naemon-config:/opt/openitc/nagios/etc/config # Configuration files related to Naemon
+      - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var # The status.dat is required for the recurring downtimes cronjob
+      - /opt/docker/itcockpit/oitc-frontend-src:/opt/openitc/src_sharing/frontend # Frontend of openITCOCKPIT to be shared with mod_gearman container so that the container can execute the EVC plugin
+      - /opt/docker/itcockpit/oitc-webroot:/opt/openitc/frontend/webroot # Webroot of openITCOCKPIT to keep images and share files with puppeteer
+      - /opt/docker/itcockpit/oitc-maps:/opt/openitc/frontend/plugins/MapModule/webroot/img # Images of the MapModule
+      - /opt/docker/itcockpit/oitc-agent-cert:/opt/openitc/agent # TLS certificats of the openITCOCKPIT Monitoring Agent
+      - /opt/docker/itcockpit/oitc-agent-etc:/opt/openitc/receiver/etc # Configuration for the openITCOCKPIT Monitoring Agent Check Reciver
+      - /opt/docker/itcockpit/oitc-var:/opt/openitc/var # A safe harbor to store .lock files
+      - /opt/docker/itcockpit/oitc-backups:/opt/openitc/nagios/backup # Automaticaly generated MySQL dumps
+      #- /opt/docker/itcockpit/oitc-import:/opt/openitc/frontend/plugins/ImportModule/webroot/files # Uplaoded files of the ImportModule
+      - /opt/docker/itcockpit/oitc-styles:/opt/openitc/frontend/plugins/DesignModule/webroot/css # Custom styles of the DesignModule
+      - /opt/docker/itcockpit/checkmk-agents:/opt/openitc/check_mk/agents:ro
+      - /opt/docker/itcockpit/checkmk-etc:/opt/openitc/check_mk/etc/check_mk
+      - /opt/docker/itcockpit/checkmk-var:/opt/openitc/check_mk/var/check_mk
+      - /opt/docker/itcockpit/prometheus-config:/opt/openitc/prometheus # Configuration files related to Prometheus
     depends_on:
       - redis
       - mysql
@@ -228,13 +272,13 @@ services:
     image: openitcockpit/puppeteer:latest
     init: true
     env_file:
-     - openitcockpit.env
-    ports:
-      - "8084"      # Puppeteer Web Server
+      - openitcockpit.env
+    expose:
+      - "8084" # Puppeteer Web Server
     networks:
       - oitc-backend
     volumes:
-      - oitc-webroot:/opt/openitc/frontend/webroot:ro
+      - /opt/docker/itcockpit/oitc-webroot:/opt/openitc/frontend/webroot:ro
     deploy:
       restart_policy:
         condition: on-failure
@@ -243,16 +287,16 @@ services:
     image: openitcockpit/checkmk:latest
     init: true
     env_file:
-     - openitcockpit.env
-    ports:
-      - "1234"      # Checkmk Wrapper HTTP API
+      - openitcockpit.env
+    expose:
+      - "1234" # Checkmk Wrapper HTTP API
     networks:
       - oitc-backend
     volumes:
-      - naemon-var:/opt/openitc/nagios/var                                  # oitc.cmd
-      - checkmk-agents:/opt/omd/sites/nagios/version/share/check_mk/agents
-      - checkmk-etc:/omd/sites/nagios/etc/check_mk
-      - checkmk-var:/omd/sites/nagios/var/check_mk
+      - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var # oitc.cmd
+      - /opt/docker/itcockpit/checkmk-agents:/opt/omd/sites/nagios/version/share/check_mk/agents
+      - /opt/docker/itcockpit/checkmk-etc:/omd/sites/nagios/etc/check_mk
+      - /opt/docker/itcockpit/checkmk-var:/omd/sites/nagios/var/check_mk
     deploy:
       restart_policy:
         condition: on-failure
@@ -261,39 +305,37 @@ services:
     image: openitcockpit/prometheus:latest
     init: true
     env_file:
-     - openitcockpit.env
-    ports:
-      - "9001"       # Supervisor
-      - "9099"       # Binaryd
-      - "9090"       # Prometheus
+      - openitcockpit.env
+    expose:
+      - "9001" # Supervisor
+      - "9099" # Binaryd
+      - "9090" # Prometheus
     networks:
       - oitc-backend
     depends_on:
       - victoria-metrics
       - openitcockpit
     volumes:
-      - prometheus-var:/opt/openitc/var
-      - prometheus-config:/opt/openitc/prometheus:ro
+      - /opt/docker/itcockpit/prometheus-var:/opt/openitc/var
+      - /opt/docker/itcockpit/prometheus-config:/opt/openitc/prometheus:ro
     deploy:
       restart_policy:
         condition: on-failure
 
-  # Docs about the postfix container ban be found
+  # Docs about the postfix container can be found
   # - https://hub.docker.com/r/boky/postfix
   # - https://github.com/bokysan/docker-postfix
   postfix:
     image: boky/postfix
     environment:
-      - HOSTNAME=openitcockpit.itsm.love            # Postfix myhostname
-      - RELAYHOST=mailrelay.example.org             # Host that relays all e-mails
-      #- RELAYHOST_USERNAME=                        # An (optional) username for the relay server
-      #- RELAYHOST_PASSWORD=                        # An (optional) login password for the relay server
-      #- MYNETWORKS=                                # allow domains from per Network ( default 127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16 )
-      #- ALLOWED_SENDER_DOMAINS=                    # domains sender domains
-      - ALLOW_EMPTY_SENDER_DOMAINS=true             # if value is set (i.e: "true"), $ALLOWED_SENDER_DOMAINS can be unset
-      #- MASQUERADED_DOMAINS=                       # domains where you want to masquerade internal hosts
-    ports:
-      - "587"      # SMTPS (postfix)
+      HOSTNAME: "${OITC_DOMAIN:?OITC_DOMAIN setzen}" # Postfix myhostname
+      RELAYHOST: "${SMTP_RELAYHOST:-}" # Host, der alle E-Mails weiterleitet (optional, leer = direkte Zustellung)
+      #RELAYHOST_USERNAME: "" # optionaler Benutzername für den Relay-Server
+      #RELAYHOST_PASSWORD: "" # optionales Passwort (als Dockhand-Variable, nicht in Git)
+      #ALLOWED_SENDER_DOMAINS: "example.org"
+      ALLOW_EMPTY_SENDER_DOMAINS: "true"
+    expose:
+      - "587" # SMTP Submission (nur Backend-Netz)
     networks:
       - oitc-backend
     deploy:
@@ -302,25 +344,5 @@ services:
 
 networks:
   oitc-backend:
-
-volumes:
-  mysql-data:
-  grafana-data:
-  graphite-data:
-  naemon-var:
-  naemon-var-local:
-  naemon-config:
-  oitc-frontend-src:
-  oitc-webroot:
-  oitc-maps:
-  oitc-agent-cert:
-  oitc-agent-etc:
-  oitc-var:
-  oitc-backups:
-  #oitc-import:
-  oitc-styles:
-  checkmk-etc:
-  checkmk-var:
-  checkmk-agents:
-  prometheus-var:
-  prometheus-config:
+  traefik_proxy:
+    external: true
