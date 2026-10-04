@@ -13,6 +13,7 @@
 #   6. Alle openITCOCKPIT-Images auf einen gemeinsamen Versionstag (OITC_VERSION) gepinnt:
 #      'latest' des CE-Images bricht derzeit den Start ab (mysqladmin vs. mysql.cnf) und
 #      Frontend und statusengine-worker sollten dieselbe Version haben.
+#   7. mysql:lts statt mysql:latest (so auch in der Upstream-Datei; latest war zuletzt MySQL 26.7)
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
 #   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN
@@ -51,7 +52,7 @@ services:
         condition: on-failure
 
   mysql:
-    image: mysql:latest
+    image: mysql:lts
     env_file:
       - openitcockpit.env
     environment:
