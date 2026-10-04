@@ -251,9 +251,8 @@ services:
       - "traefik.http.routers.itcockpit.tls.certresolver=myresolver"
       - "traefik.http.services.itcockpit.loadbalancer.server.port=443"
       - "traefik.http.services.itcockpit.loadbalancer.server.scheme=https"
-      # Selbstsigniertes Backend-Zertifikat: benötigt einen serversTransport in der
-      # Traefik-Dateikonfiguration (siehe Anleitung). Ohne diese Definition die Zeile entfernen/auskommentieren.
-      - "traefik.http.services.itcockpit.loadbalancer.serversTransport=insecure-transport@file"
+      # Das Backend nutzt ein selbstsigniertes Zertifikat. Traefik läuft hier mit
+      # --serverstransport.insecureskipverify=true, ein eigener serversTransport ist deshalb nicht nötig.
     volumes:
       - /opt/docker/itcockpit/naemon-config:/opt/openitc/nagios/etc/config # Configuration files related to Naemon
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var # The status.dat is required for the recurring downtimes cronjob
