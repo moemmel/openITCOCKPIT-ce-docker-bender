@@ -193,8 +193,7 @@ services:
     env_file:
       - openitcockpit.env
     environment:
-      <<: *oitc-db-secrets
-      <<: *oitc-se-secrets
+      <<: [*oitc-db-secrets, *oitc-se-secrets]
       IS_WORKHORSE_CONTAINER: "1" # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
     volumes:
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
@@ -216,8 +215,7 @@ services:
     env_file:
       - openitcockpit.env
     environment:
-      <<: *oitc-db-secrets
-      <<: *oitc-se-secrets
+      <<: [*oitc-db-secrets, *oitc-se-secrets]
     networks:
       - oitc-backend
     depends_on:
@@ -234,8 +232,7 @@ services:
     env_file:
       - openitcockpit.env
     environment:
-      <<: *oitc-db-secrets
-      <<: *oitc-se-secrets
+      <<: [*oitc-db-secrets, *oitc-se-secrets]
       OITC_ADMIN_EMAIL: "${OITC_ADMIN_EMAIL:?OITC_ADMIN_EMAIL setzen}"
       OITC_ADMIN_PASSWORD: "${OITC_ADMIN_PASSWORD:?OITC_ADMIN_PASSWORD setzen}"
     # Keine Host-Ports (80/443): Traefik übernimmt. Das Backend spricht intern HTTPS (selbstsigniert).
