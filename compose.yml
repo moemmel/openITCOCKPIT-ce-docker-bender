@@ -15,9 +15,11 @@
 #      Frontend und statusengine-worker sollten dieselbe Version haben.
 #   7. mysql:lts statt mysql:latest (so auch in der Upstream-Datei; latest war zuletzt MySQL 26.7)
 #   8. SE_MYSQL_PASSWORD (statusengine-worker) = MYSQL_PASSWORD, sonst "Access denied" für den Worker
+#   9. Grafana-Admin-Passwort aus Dockhand-Variable GRAFANA_ADMIN_PASSWORD; graphite-web mit GW_TIMEZONE
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
-#   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN
+#   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN,
+#   GRAFANA_ADMIN_PASSWORD
 #   (OITC_DOMAIN = Hostname der Instanz, z.B. monitoring.example.org)
 # Optional: SMTP_RELAYHOST, OITC_VERSION (Standard: 5.5.1 - Image-Tag aller openITCOCKPIT-Container)
 # Hinweis: In Passwörtern kein "$" verwenden (Compose würde es als Variable lesen).
@@ -30,6 +32,12 @@ x-oitc-db-secrets: &oitc-db-secrets
 # Ohne diese Zeile gilt der Standardwert aus openitcockpit.env -> "Access denied".
 x-oitc-se-secrets: &oitc-se-secrets
   SE_MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
+
+# Grafana-Admin-Passwort: Beide Variablen müssen denselben Wert haben (steht so in openitcockpit.env).
+# Der Standardwert in der öffentlichen Upstream-Datei ist bekannt und darf nicht verwendet werden.
+x-oitc-grafana-secrets: &oitc-grafana-secrets
+  OITC_GRAFANA_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD setzen}"
+  GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD setzen}"
 
 services:
 
@@ -141,6 +149,8 @@ services:
 
   graphite-web:
     image: openitcockpit/graphite-web:${OITC_VERSION:-5.5.1}
+    environment:
+      GW_TIMEZONE: "Europe/Berlin"
     expose:
       - "8080" # Graphite Web
     volumes:
@@ -155,6 +165,8 @@ services:
     image: openitcockpit/grafana:${OITC_VERSION:-5.5.1}
     env_file:
       - openitcockpit.env
+    environment:
+      <<: *oitc-grafana-secrets
     expose:
       - "3033" # Grafana
     networks:
@@ -232,7 +244,7 @@ services:
     env_file:
       - openitcockpit.env
     environment:
-      <<: [*oitc-db-secrets, *oitc-se-secrets]
+      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-grafana-secrets]
       OITC_ADMIN_EMAIL: "${OITC_ADMIN_EMAIL:?OITC_ADMIN_EMAIL setzen}"
       OITC_ADMIN_PASSWORD: "${OITC_ADMIN_PASSWORD:?OITC_ADMIN_PASSWORD setzen}"
     # Keine Host-Ports (80/443): Traefik übernimmt. Das Backend spricht intern HTTPS (selbstsigniert).
