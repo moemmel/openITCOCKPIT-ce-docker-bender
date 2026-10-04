@@ -16,12 +16,15 @@
 #   7. mysql:lts statt mysql:latest (so auch in der Upstream-Datei; latest war zuletzt MySQL 26.7)
 #   8. SE_MYSQL_PASSWORD (statusengine-worker) = MYSQL_PASSWORD, sonst "Access denied" für den Worker
 #   9. Grafana-Admin-Passwort aus Dockhand-Variable GRAFANA_ADMIN_PASSWORD; graphite-web mit GW_TIMEZONE
+#  10. Supervisor-Passwort aus Dockhand-Variable SUPERVISOR_PASSWORD (naemon, prometheus, worker, frontend)
+#  11. Postfix: Relay, Zugangsdaten und Absender-Umschreibung über POSTFIX_*-Variablen
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
 #   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN,
-#   GRAFANA_ADMIN_PASSWORD
+#   GRAFANA_ADMIN_PASSWORD, SUPERVISOR_PASSWORD, POSTFIX_HOSTNAME
 #   (OITC_DOMAIN = Hostname der Instanz, z.B. monitoring.example.org)
-# Optional: SMTP_RELAYHOST, OITC_VERSION (Standard: 5.5.1 - Image-Tag aller openITCOCKPIT-Container)
+# Optional: POSTFIX_RELAYHOST, POSTFIX_RELAY_USERNAME, POSTFIX_RELAY_PASSWORD, POSTFIX_SENDER_MAP,
+#   OITC_VERSION (Standard: 5.7.0 - Image-Tag aller openITCOCKPIT-Container)
 # Hinweis: In Passwörtern kein "$" verwenden (Compose würde es als Variable lesen).
 
 x-oitc-db-secrets: &oitc-db-secrets
@@ -39,10 +42,16 @@ x-oitc-grafana-secrets: &oitc-grafana-secrets
   OITC_GRAFANA_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD setzen}"
   GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD setzen}"
 
+# Supervisor-Passwort: Das Frontend steuert die Supervisor-Dienste von naemon, statusengine-worker,
+# mod_gearman_worker und prometheus (Port 9001) - alle Container brauchen denselben Wert.
+# Der Standardwert der Images ("password") ist bekannt.
+x-oitc-supervisor-secrets: &oitc-supervisor-secrets
+  SUPERVISOR_PASSWORD: "${SUPERVISOR_PASSWORD:?SUPERVISOR_PASSWORD setzen}"
+
 services:
 
   gearmand:
-    image: openitcockpit/gearmand:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/gearmand:${OITC_VERSION:-5.7.0}
     expose:
       - "4730" # Gearman-Job-Server
     ulimits: # See: https://statusengine.org/tutorials/gearman-to-many-files/
@@ -87,7 +96,7 @@ services:
         condition: on-failure
 
   victoria-metrics:
-    image: openitcockpit/victoria-metrics:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/victoria-metrics:${OITC_VERSION:-5.7.0}
     env_file:
       - openitcockpit.env
     expose:
@@ -99,7 +108,7 @@ services:
         condition: on-failure
 
   carbon-c-relay:
-    image: openitcockpit/carbon-c-relay:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/carbon-c-relay:${OITC_VERSION:-5.7.0}
     # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
     env_file:
       - openitcockpit.env
@@ -114,7 +123,7 @@ services:
   # You can add more carbon-cache instances if needed
   # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
   carbon-cache1:
-    image: openitcockpit/carbon-cache:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/carbon-cache:${OITC_VERSION:-5.7.0}
     env_file:
       - openitcockpit.env
     environment:
@@ -132,7 +141,7 @@ services:
   # You can add more carbon-cache instances if needed
   # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
   carbon-cache2:
-    image: openitcockpit/carbon-cache:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/carbon-cache:${OITC_VERSION:-5.7.0}
     env_file:
       - openitcockpit.env
     environment:
@@ -148,7 +157,7 @@ services:
         hard: 65536
 
   graphite-web:
-    image: openitcockpit/graphite-web:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/graphite-web:${OITC_VERSION:-5.7.0}
     environment:
       GW_TIMEZONE: "Europe/Berlin"
     expose:
@@ -162,7 +171,7 @@ services:
         condition: on-failure
 
   grafana:
-    image: openitcockpit/grafana:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/grafana:${OITC_VERSION:-5.7.0}
     env_file:
       - openitcockpit.env
     environment:
@@ -180,10 +189,12 @@ services:
         condition: on-failure
 
   naemon:
-    image: openitcockpit/naemon:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/naemon:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
+    environment:
+      <<: *oitc-supervisor-secrets
     expose:
       - "9001" # Supervisor
       - "9099" # Binaryd
@@ -200,12 +211,12 @@ services:
         condition: on-failure
 
   mod_gearman_worker:
-    image: openitcockpit/mod_gearman_worker:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/mod_gearman_worker:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
     environment:
-      <<: [*oitc-db-secrets, *oitc-se-secrets]
+      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-supervisor-secrets]
       IS_WORKHORSE_CONTAINER: "1" # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
     volumes:
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
@@ -222,12 +233,12 @@ services:
         condition: on-failure
 
   statusengine-worker:
-    image: openitcockpit/statusengine-worker:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/statusengine-worker:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
     environment:
-      <<: [*oitc-db-secrets, *oitc-se-secrets]
+      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-supervisor-secrets]
     networks:
       - oitc-backend
     depends_on:
@@ -239,12 +250,12 @@ services:
         condition: on-failure
 
   openitcockpit:
-    image: openitcockpit/openitcockpit-ce:${OITC_VERSION:-5.5.1} # Community Edition of openITCOCKPIT
+    image: openitcockpit/openitcockpit-ce:${OITC_VERSION:-5.7.0} # Community Edition of openITCOCKPIT
     init: true
     env_file:
       - openitcockpit.env
     environment:
-      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-grafana-secrets]
+      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-grafana-secrets, *oitc-supervisor-secrets]
       OITC_ADMIN_EMAIL: "${OITC_ADMIN_EMAIL:?OITC_ADMIN_EMAIL setzen}"
       OITC_ADMIN_PASSWORD: "${OITC_ADMIN_PASSWORD:?OITC_ADMIN_PASSWORD setzen}"
     # Keine Host-Ports (80/443): Traefik übernimmt. Das Backend spricht intern HTTPS (selbstsigniert).
@@ -290,7 +301,7 @@ services:
         condition: on-failure
 
   puppeteer:
-    image: openitcockpit/puppeteer:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/puppeteer:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
@@ -305,7 +316,7 @@ services:
         condition: on-failure
 
   checkmk:
-    image: openitcockpit/checkmk:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/checkmk:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
@@ -323,10 +334,12 @@ services:
         condition: on-failure
 
   prometheus:
-    image: openitcockpit/prometheus:${OITC_VERSION:-5.5.1}
+    image: openitcockpit/prometheus:${OITC_VERSION:-5.7.0}
     init: true
     env_file:
       - openitcockpit.env
+    environment:
+      <<: *oitc-supervisor-secrets
     expose:
       - "9001" # Supervisor
       - "9099" # Binaryd
@@ -349,12 +362,12 @@ services:
   postfix:
     image: boky/postfix
     environment:
-      HOSTNAME: "${POSTFIX_HOSTNAME:?POSTFIX_HOSTNAME setzen}"
-      RELAYHOST: "${POSTFIX_RELAYHOST:-}"
+      HOSTNAME: "${POSTFIX_HOSTNAME:?POSTFIX_HOSTNAME setzen}" # Postfix myhostname
+      RELAYHOST: "${POSTFIX_RELAYHOST:-}" # z.B. [mail.example.org]:587 (leer = direkte Zustellung)
       RELAYHOST_USERNAME: "${POSTFIX_RELAY_USERNAME:-}"
-      RELAYHOST_PASSWORD: "${POSTFIX_RELAY_PASSWORD:-}"
-      POSTFIX_sender_canonical_maps: "${POSTFIX_SENDER_MAP:-}"
-      #ALLOWED_SENDER_DOMAINS: "example.org"
+      RELAYHOST_PASSWORD: "${POSTFIX_RELAY_PASSWORD:-}" # als Dockhand-Variable, nicht in Git
+      # Das Relay lehnt Absender ab, die nicht zum Benutzernamen passen -> alle Absender umschreiben:
+      POSTFIX_sender_canonical_maps: "${POSTFIX_SENDER_MAP:-}" # z.B. static:absender@example.org
       ALLOW_EMPTY_SENDER_DOMAINS: "true"
     expose:
       - "587" # SMTP Submission (nur Backend-Netz)
