@@ -14,6 +14,7 @@
 #      'latest' des CE-Images bricht derzeit den Start ab (mysqladmin vs. mysql.cnf) und
 #      Frontend und statusengine-worker sollten dieselbe Version haben.
 #   7. mysql:lts statt mysql:latest (so auch in der Upstream-Datei; latest war zuletzt MySQL 26.7)
+#   8. SE_MYSQL_PASSWORD (statusengine-worker) = MYSQL_PASSWORD, sonst "Access denied" für den Worker
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
 #   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN
@@ -24,6 +25,11 @@
 x-oitc-db-secrets: &oitc-db-secrets
   MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD setzen}"
   MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
+
+# Der statusengine-worker liest sein DB-Passwort aus SE_MYSQL_PASSWORD (nicht aus MYSQL_PASSWORD).
+# Ohne diese Zeile gilt der Standardwert aus openitcockpit.env -> "Access denied".
+x-oitc-se-secrets: &oitc-se-secrets
+  SE_MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
 
 services:
 
@@ -188,6 +194,7 @@ services:
       - openitcockpit.env
     environment:
       <<: *oitc-db-secrets
+      <<: *oitc-se-secrets
       IS_WORKHORSE_CONTAINER: "1" # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
     volumes:
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
@@ -210,6 +217,7 @@ services:
       - openitcockpit.env
     environment:
       <<: *oitc-db-secrets
+      <<: *oitc-se-secrets
     networks:
       - oitc-backend
     depends_on:
@@ -227,6 +235,7 @@ services:
       - openitcockpit.env
     environment:
       <<: *oitc-db-secrets
+      <<: *oitc-se-secrets
       OITC_ADMIN_EMAIL: "${OITC_ADMIN_EMAIL:?OITC_ADMIN_EMAIL setzen}"
       OITC_ADMIN_PASSWORD: "${OITC_ADMIN_PASSWORD:?OITC_ADMIN_PASSWORD setzen}"
     # Keine Host-Ports (80/443): Traefik übernimmt. Das Backend spricht intern HTTPS (selbstsigniert).
