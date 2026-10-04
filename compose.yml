@@ -353,6 +353,7 @@ services:
       RELAYHOST: "${POSTFIX_RELAYHOST:-}"
       RELAYHOST_USERNAME: "${POSTFIX_RELAY_USERNAME:-}"
       RELAYHOST_PASSWORD: "${POSTFIX_RELAY_PASSWORD:-}"
+      POSTFIX_sender_canonical_maps: "${POSTFIX_SENDER_MAP:-}"
       #ALLOWED_SENDER_DOMAINS: "example.org"
       ALLOW_EMPTY_SENDER_DOMAINS: "true"
     expose:
