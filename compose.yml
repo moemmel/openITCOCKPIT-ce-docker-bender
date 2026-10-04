@@ -18,6 +18,7 @@
 #   9. Grafana-Admin-Passwort aus Dockhand-Variable GRAFANA_ADMIN_PASSWORD; graphite-web mit GW_TIMEZONE
 #  10. Supervisor-Passwort aus Dockhand-Variable SUPERVISOR_PASSWORD (naemon, prometheus, worker, frontend)
 #  11. Postfix: Relay, Zugangsdaten und Absender-Umschreibung über POSTFIX_*-Variablen
+#  12. OITC_MYSQL_PASSWORD (mod_gearman_worker) = MYSQL_PASSWORD, sonst scheitern Benachrichtigungen
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
 #   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN,
@@ -35,6 +36,12 @@ x-oitc-db-secrets: &oitc-db-secrets
 # Ohne diese Zeile gilt der Standardwert aus openitcockpit.env -> "Access denied".
 x-oitc-se-secrets: &oitc-se-secrets
   SE_MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
+
+# Das PHP-Kommando "cake" (Benachrichtigungen im mod_gearman_worker) liest das
+# DB-Passwort aus OITC_MYSQL_PASSWORD. Das Frontend kommt ohne diese Variable aus und bekommt sie nicht. Ohne diese Zeile gilt der Standardwert aus openitcockpit.env
+# -> "Access denied" beim Versand von Benachrichtigungen (Log: /tmp/openitcockpit/logs/nagios/cli-error.log).
+x-oitc-app-db-secrets: &oitc-app-db-secrets
+  OITC_MYSQL_PASSWORD: "${MYSQL_PASSWORD:?MYSQL_PASSWORD setzen}"
 
 # Grafana-Admin-Passwort: Beide Variablen müssen denselben Wert haben (steht so in openitcockpit.env).
 # Der Standardwert in der öffentlichen Upstream-Datei ist bekannt und darf nicht verwendet werden.
@@ -216,7 +223,7 @@ services:
     env_file:
       - openitcockpit.env
     environment:
-      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-supervisor-secrets]
+      <<: [*oitc-db-secrets, *oitc-se-secrets, *oitc-app-db-secrets, *oitc-supervisor-secrets]
       IS_WORKHORSE_CONTAINER: "1" # Enables the CLI for sending notifications and to be able to execute check plugins like EVC
     volumes:
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
