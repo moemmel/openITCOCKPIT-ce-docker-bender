@@ -19,6 +19,8 @@
 #  10. Supervisor-Passwort aus Dockhand-Variable SUPERVISOR_PASSWORD (naemon, prometheus, worker, frontend)
 #  11. Postfix: Relay, Zugangsdaten und Absender-Umschreibung über POSTFIX_*-Variablen
 #  12. OITC_MYSQL_PASSWORD (mod_gearman_worker) = MYSQL_PASSWORD, sonst scheitern Benachrichtigungen
+#  13. restart: unless-stopped statt deploy.restart_policy (on-failure): Container starten nach einem Reboot des
+#      Hosts wieder; carbon-cache1/2 hatten im Upstream gar keine Restart-Regel.
 #
 # Benötigte Variablen (in Dockhand beim Stack hinterlegen, NICHT in Git):
 #   MYSQL_ROOT_PASSWORD, MYSQL_PASSWORD, OITC_ADMIN_EMAIL, OITC_ADMIN_PASSWORD, OITC_DOMAIN,
@@ -59,6 +61,7 @@ services:
 
   gearmand:
     image: openitcockpit/gearmand:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     expose:
       - "4730" # Gearman-Job-Server
     ulimits: # See: https://statusengine.org/tutorials/gearman-to-many-files/
@@ -67,22 +70,18 @@ services:
         hard: 65536
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   redis:
     image: redis:latest
+    restart: unless-stopped
     expose:
       - "6379" # Redis-Server
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   mysql:
     image: mysql:lts
+    restart: unless-stopped
     env_file:
       - openitcockpit.env
     environment:
@@ -98,24 +97,20 @@ services:
     volumes:
       - /opt/docker/itcockpit/mysql-data:/var/lib/mysql
     command: mysqld --sql_mode="" --innodb-buffer-pool-size=256M --innodb-flush-log-at-trx-commit=2 --innodb-file-per-table=1 --innodb-flush-method=O_DIRECT --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci --skip-log-bin
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   victoria-metrics:
     image: openitcockpit/victoria-metrics:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     env_file:
       - openitcockpit.env
     expose:
       - "8428" # victoria-metrics
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   carbon-c-relay:
     image: openitcockpit/carbon-c-relay:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
     env_file:
       - openitcockpit.env
@@ -123,14 +118,12 @@ services:
       - "2003" # local graphite plaintext port
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   # You can add more carbon-cache instances if needed
   # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
   carbon-cache1:
     image: openitcockpit/carbon-cache:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     env_file:
       - openitcockpit.env
     environment:
@@ -149,6 +142,7 @@ services:
   # Please notice: https://github.com/grobian/carbon-c-relay/issues/455
   carbon-cache2:
     image: openitcockpit/carbon-cache:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     env_file:
       - openitcockpit.env
     environment:
@@ -165,6 +159,7 @@ services:
 
   graphite-web:
     image: openitcockpit/graphite-web:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     environment:
       GW_TIMEZONE: "Europe/Berlin"
     expose:
@@ -173,12 +168,10 @@ services:
       - /opt/docker/itcockpit/graphite-data:/var/lib/graphite/whisper
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   grafana:
     image: openitcockpit/grafana:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     env_file:
       - openitcockpit.env
     environment:
@@ -191,12 +184,10 @@ services:
           - "grafana.docker"
     volumes:
       - /opt/docker/itcockpit/grafana-data:/var/lib/grafana
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   naemon:
     image: openitcockpit/naemon:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -213,12 +204,10 @@ services:
       - /opt/docker/itcockpit/naemon-var:/opt/openitc/nagios/var
       - /opt/docker/itcockpit/naemon-var-local:/opt/openitc/nagios/var_local # Stuff like logfiles etc we do not care about this
       - /opt/docker/itcockpit/naemon-config:/opt/openitc/nagios/etc/config:ro
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   mod_gearman_worker:
     image: openitcockpit/mod_gearman_worker:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -236,11 +225,10 @@ services:
       - gearmand
     deploy:
       replicas: 1 # Increase this number if you need more mod_gearman worker containers
-      restart_policy:
-        condition: on-failure
 
   statusengine-worker:
     image: openitcockpit/statusengine-worker:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -252,12 +240,10 @@ services:
       - redis
       - mysql
       - gearmand
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   openitcockpit:
     image: openitcockpit/openitcockpit-ce:${OITC_VERSION:-5.7.0} # Community Edition of openITCOCKPIT
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -303,12 +289,10 @@ services:
       - redis
       - mysql
       - gearmand
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   puppeteer:
     image: openitcockpit/puppeteer:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -318,12 +302,10 @@ services:
       - oitc-backend
     volumes:
       - /opt/docker/itcockpit/oitc-webroot:/opt/openitc/frontend/webroot:ro
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   checkmk:
     image: openitcockpit/checkmk:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -336,12 +318,10 @@ services:
       - /opt/docker/itcockpit/checkmk-agents:/opt/omd/sites/nagios/version/share/check_mk/agents
       - /opt/docker/itcockpit/checkmk-etc:/omd/sites/nagios/etc/check_mk
       - /opt/docker/itcockpit/checkmk-var:/omd/sites/nagios/var/check_mk
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   prometheus:
     image: openitcockpit/prometheus:${OITC_VERSION:-5.7.0}
+    restart: unless-stopped
     init: true
     env_file:
       - openitcockpit.env
@@ -359,15 +339,13 @@ services:
     volumes:
       - /opt/docker/itcockpit/prometheus-var:/opt/openitc/var
       - /opt/docker/itcockpit/prometheus-config:/opt/openitc/prometheus:ro
-    deploy:
-      restart_policy:
-        condition: on-failure
 
   # Docs about the postfix container can be found
   # - https://hub.docker.com/r/boky/postfix
   # - https://github.com/bokysan/docker-postfix
   postfix:
     image: boky/postfix
+    restart: unless-stopped
     environment:
       HOSTNAME: "${POSTFIX_HOSTNAME:?POSTFIX_HOSTNAME setzen}" # Postfix myhostname
       RELAYHOST: "${POSTFIX_RELAYHOST:-}" # z.B. [mail.example.org]:587 (leer = direkte Zustellung)
@@ -380,9 +358,6 @@ services:
       - "587" # SMTP Submission (nur Backend-Netz)
     networks:
       - oitc-backend
-    deploy:
-      restart_policy:
-        condition: on-failure
 
 networks:
   oitc-backend:
