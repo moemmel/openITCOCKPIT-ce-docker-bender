@@ -349,10 +349,10 @@ services:
   postfix:
     image: boky/postfix
     environment:
-      HOSTNAME: "${OITC_DOMAIN:?OITC_DOMAIN setzen}" # Postfix myhostname
-      RELAYHOST: "${SMTP_RELAYHOST:-}" # Host, der alle E-Mails weiterleitet (optional, leer = direkte Zustellung)
-      #RELAYHOST_USERNAME: "" # optionaler Benutzername für den Relay-Server
-      #RELAYHOST_PASSWORD: "" # optionales Passwort (als Dockhand-Variable, nicht in Git)
+      HOSTNAME: "${POSTFIX_HOSTNAME:?POSTFIX_HOSTNAME setzen}"
+      RELAYHOST: "${POSTFIX_RELAYHOST:-}"
+      RELAYHOST_USERNAME: "${POSTFIX_RELAY_USERNAME:-}"
+      RELAYHOST_PASSWORD: "${POSTFIX_RELAY_PASSWORD:-}"
       #ALLOWED_SENDER_DOMAINS: "example.org"
       ALLOW_EMPTY_SENDER_DOMAINS: "true"
     expose:
